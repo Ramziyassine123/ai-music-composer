@@ -1,0 +1,152 @@
+.App {
+    text-align: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.App-header {
+    padding: 2rem;
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.App-header h1 {
+    margin: 0;
+    font-size: 3rem;
+    font-weight: bold;
+}
+
+.App-header p {
+    margin: 1rem 0 0 0;
+    font-size: 1.2rem;
+    opacity: 0.9;
+}
+
+.App-main {
+    padding: 3rem 2rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.music-generator {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 2rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.controls {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.control-group label {
+    min-width: 120px;
+    text-align: right;
+    font-weight: 600;
+}
+
+.control-group input[type="range"] {
+    width: 200px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    outline: none;
+}
+
+.control-group span {
+    min-width: 40px;
+    text-align: left;
+    font-weight: bold;
+}
+
+.generate-btn {
+    background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+    border: none;
+    color: white;
+    padding: 1rem 2rem;
+    border-radius: 50px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(238, 90, 82, 0.4);
+}
+
+.generate-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(238, 90, 82, 0.6);
+}
+
+.generate-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.music-controls {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 2rem;
+    margin-top: 2rem;
+}
+
+.music-controls h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.5rem;
+}
+
+.playback-controls {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.play-btn, .download-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 0.8rem 1.5rem;
+    border-radius: 25px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.play-btn:hover, .download-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.App-footer {
+    padding: 2rem;
+    background: rgba(0, 0, 0, 0.2);
+    margin-top: 3rem;
+}
+
+@media (max-width: 768px) {
+    .control-group {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .control-group label {
+        text-align: center;
+        min-width: auto;
+    }
+
+    .playback-controls {
+        flex-direction: column;
+        align-items: center;
+    }
+}

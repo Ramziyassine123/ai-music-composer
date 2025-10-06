@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+backend/saved_models/
+*.pth
+*.pkl
+
+# Node
+node_modules/
+npm-debug.log*
+.DS_Store
+
+# Data
+data/midi_files/
+*.mid
+*.midi
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Environment
+.env
