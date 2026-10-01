@@ -26,3 +26,5 @@ data/midi_files/
 
 # Environment
 .env
+# Frontend build output
+frontend/build/

@@ -54,29 +54,40 @@ class MidiProcessor:
 
     def tokens_to_midi(self, tokens: List[int], tempo: int = 120,
                        time_step: float = 0.125) -> pretty_midi.PrettyMIDI:
-        """Convert token sequence back to MIDI"""
+        """Convert token sequence back to MIDI.
+
+        midi_to_tokens repeats a pitch token for every step a note is held,
+        so consecutive identical pitch tokens are merged into one note.
+        """
         midi = pretty_midi.PrettyMIDI()
         instrument = pretty_midi.Instrument(program=0)  # Piano
 
         current_time = 0.0
+        current_note = None
 
         for token in tokens:
             if token == self.START_TOKEN or token == self.END_TOKEN:
                 continue
-            elif token == self.REST_TOKEN:
-                current_time += time_step
+
+            pitch = token - self.SPECIAL_TOKENS + self.min_pitch
+            is_pitch = (token != self.REST_TOKEN
+                        and self.min_pitch <= pitch <= self.max_pitch)
+
+            if is_pitch and current_note is not None and current_note.pitch == pitch:
+                # Same pitch as previous step: extend the held note
+                current_note.end = current_time + time_step
+            elif is_pitch:
+                current_note = pretty_midi.Note(
+                    velocity=80,
+                    pitch=int(pitch),
+                    start=current_time,
+                    end=current_time + time_step
+                )
+                instrument.notes.append(current_note)
             else:
-                # Convert token back to pitch
-                pitch = token - self.SPECIAL_TOKENS + self.min_pitch
-                if self.min_pitch <= pitch <= self.max_pitch:
-                    note = pretty_midi.Note(
-                        velocity=80,
-                        pitch=int(pitch),
-                        start=current_time,
-                        end=current_time + time_step
-                    )
-                    instrument.notes.append(note)
-                current_time += time_step
+                current_note = None
+
+            current_time += time_step
 
         midi.instruments.append(instrument)
         return midi
@@ -104,12 +115,13 @@ class MidiProcessor:
         return all_tokens, stats
 
     def create_sequences(self, token_sequences: List[List[int]],
-                         seq_length: int = 32) -> Tuple[np.ndarray, np.ndarray]:
+                         seq_length: int = 32,
+                         stride: int = 1) -> Tuple[np.ndarray, np.ndarray]:
         """Create training sequences from token data"""
         X, y = [], []
 
         for tokens in token_sequences:
-            for i in range(len(tokens) - seq_length):
+            for i in range(0, len(tokens) - seq_length, stride):
                 X.append(tokens[i:i + seq_length])
                 y.append(tokens[i + 1:i + seq_length + 1])
 

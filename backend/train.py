@@ -1,3 +1,6 @@
+import argparse
+import pickle
+import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,7 +23,8 @@ class MusicDataset(Dataset):
         return self.x[idx], self.y[idx]
 
 
-def train_model():
+def train_model(epochs: int = 15, batch_size: int = 128, stride: int = 4,
+                seq_length: int = 32, lr: float = 0.001):
     # Initialize processor
     processor = MidiProcessor()
 
@@ -32,15 +36,16 @@ def train_model():
         print("No MIDI files found! Please add MIDI files to data/midi_files/")
         return
 
-    # Create training sequences
+    # Create training sequences (stride > 1 skips heavily overlapping windows)
     print("Creating training sequences...")
-    X, y = processor.create_sequences(token_sequences, seq_length=32)
+    X, y = processor.create_sequences(token_sequences, seq_length=seq_length,
+                                      stride=stride)
 
     print(f"Training data shape: {X.shape}")
 
     # Create dataset and dataloader
     dataset = MusicDataset(X, y)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # Initialize model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -48,14 +53,20 @@ def train_model():
 
     model = MusicLSTM(vocab_size=processor.vocab_size).to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    # Save processor up front; the model is saved after every epoch so
+    # training can be stopped at any point with a usable checkpoint
+    os.makedirs('saved_models', exist_ok=True)
+    with open('saved_models/processor.pkl', 'wb') as f:
+        pickle.dump(processor, f)
 
     # Training loop
-    num_epochs = 50
     model.train()
 
-    for epoch in range(num_epochs):
+    for epoch in range(epochs):
         total_loss = 0
+        start = time.time()
 
         for batch_idx, (data, targets) in enumerate(dataloader):
             data, targets = data.to(device), targets.to(device)
@@ -73,19 +84,22 @@ def train_model():
             total_loss += loss.item()
 
         avg_loss = total_loss / len(dataloader)
-        print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {avg_loss:.4f}')
+        print(f'Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}, '
+              f'Time: {time.time() - start:.0f}s', flush=True)
 
-    # Save model and processor
-    os.makedirs('saved_models', exist_ok=True)
-    torch.save(model.state_dict(), 'saved_models/music_model.pth')
-
-    # Save processor for later use
-    import pickle
-    with open('saved_models/processor.pkl', 'wb') as f:
-        pickle.dump(processor, f)
+        torch.save(model.state_dict(), 'saved_models/music_model.pth')
 
     print("Training completed! Model saved to saved_models/")
 
 
 if __name__ == "__main__":
-    train_model()
+    parser = argparse.ArgumentParser(description="Train the music LSTM")
+    parser.add_argument('--epochs', type=int, default=15)
+    parser.add_argument('--batch-size', type=int, default=128)
+    parser.add_argument('--stride', type=int, default=4,
+                        help="step between training windows (1 = every position)")
+    parser.add_argument('--lr', type=float, default=0.001)
+    args = parser.parse_args()
+
+    train_model(epochs=args.epochs, batch_size=args.batch_size,
+                stride=args.stride, lr=args.lr)

@@ -6,7 +6,7 @@ import pickle
 import io
 import os
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from model import MusicLSTM
 
 app = FastAPI(title="AI Music Composer API")
@@ -26,8 +26,8 @@ processor = None
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class GenerationRequest(BaseModel):
-    length: int = 32
-    temperature: float = 1.0
+    length: int = Field(32, ge=1, le=1024)  # time steps of 0.125s
+    temperature: float = Field(1.0, gt=0, le=5.0)
     key: str = "C"  # For future use
 
 @app.on_event("startup")
@@ -72,14 +72,16 @@ async def generate_music(request: GenerationRequest):
 
     try:
         # Create a simple starting sequence
-        start_sequence = [processor.START_TOKEN, processor.SPECIAL_TOKENS + 24]  # Start with C4
+        c4_token = 60 - processor.min_pitch + processor.SPECIAL_TOKENS
+        start_sequence = [processor.START_TOKEN, c4_token]  # Start with C4
 
-        # Generate sequence
+        # Generate sequence; START/END are banned so the melody runs the full length
         generated_tokens = model.generate(
             start_sequence=start_sequence,
             length=request.length,
             temperature=request.temperature,
-            device=device
+            device=device,
+            banned_tokens=[processor.START_TOKEN, processor.END_TOKEN]
         )
 
         # Convert to MIDI

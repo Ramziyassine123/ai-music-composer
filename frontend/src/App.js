@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import MusicGenerator from './components/MusicGenerator';
 import './styles/App.css';
 

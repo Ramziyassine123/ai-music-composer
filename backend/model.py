@@ -27,7 +27,8 @@ class MusicLSTM(nn.Module):
         return output, hidden
 
     def generate(self, start_sequence: List[int], length: int = 32,
-                 temperature: float = 1.0, device: str = 'cpu') -> List[int]:
+                 temperature: float = 1.0, device: str = 'cpu',
+                 banned_tokens: Optional[List[int]] = None) -> List[int]:
         self.eval()
         generated = start_sequence.copy()
 
@@ -38,6 +39,8 @@ class MusicLSTM(nn.Module):
             for _ in range(length):
                 output, hidden = self.forward(input_seq, hidden)
                 logits = output[0, -1, :] / temperature
+                if banned_tokens:
+                    logits[banned_tokens] = float('-inf')
                 probabilities = torch.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probabilities, 1).item()
                 generated.append(next_token)

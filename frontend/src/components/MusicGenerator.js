@@ -1,17 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { playMidiData } from '../utils/audioUtils';
+import { playMidiData, stopPlayback } from '../utils/audioUtils';
+
+// Each generated step is 1/8 of a second (see backend midi_utils.py)
+const STEP_SECONDS = 0.125;
 
 const MusicGenerator = () => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedMusic, setGeneratedMusic] = useState(null);
+    const [isPlaying, setIsPlaying] = useState(false);
     const [settings, setSettings] = useState({
-        length: 32,
+        length: 128,
         temperature: 1.0
     });
 
+    // Stop any playing audio when the component unmounts
+    useEffect(() => stopPlayback, []);
+
     const generateMusic = async () => {
         setIsGenerating(true);
+        stopPlayback();
+        setIsPlaying(false);
 
         try {
             const response = await axios.post('/generate', settings, {
@@ -22,18 +31,32 @@ const MusicGenerator = () => {
 
         } catch (error) {
             console.error('Generation failed:', error);
-            alert('Failed to generate music. Make sure the backend is running!');
+            let detail = 'Make sure the backend is running!';
+            // The error body is a Blob because of responseType: 'blob'
+            if (error.response && error.response.data instanceof Blob) {
+                try {
+                    detail = JSON.parse(await error.response.data.text()).detail || detail;
+                } catch (e) { /* not JSON */ }
+            }
+            alert(`Failed to generate music: ${detail}`);
         } finally {
             setIsGenerating(false);
         }
     };
 
     const playMusic = async () => {
+        if (isPlaying) {
+            stopPlayback();
+            setIsPlaying(false);
+            return;
+        }
         if (generatedMusic) {
             try {
-                await playMidiData(generatedMusic);
+                setIsPlaying(true);
+                await playMidiData(generatedMusic, () => setIsPlaying(false));
             } catch (error) {
                 console.error('Playback failed:', error);
+                setIsPlaying(false);
                 alert('Playback failed. Please try again.');
             }
         }
@@ -56,15 +79,16 @@ const MusicGenerator = () => {
         <div className="music-generator">
             <div className="controls">
                 <div className="control-group">
-                    <label>Length (notes):</label>
+                    <label>Length:</label>
                     <input
                         type="range"
-                        min="16"
-                        max="64"
+                        min="32"
+                        max="256"
+                        step="16"
                         value={settings.length}
                         onChange={(e) => setSettings({...settings, length: parseInt(e.target.value)})}
                     />
-                    <span>{settings.length}</span>
+                    <span>{settings.length * STEP_SECONDS}s</span>
                 </div>
 
                 <div className="control-group">
@@ -94,7 +118,7 @@ const MusicGenerator = () => {
                     <h3>🎉 Music Generated!</h3>
                     <div className="playback-controls">
                         <button onClick={playMusic} className="play-btn">
-                            ▶️ Play
+                            {isPlaying ? '⏹️ Stop' : '▶️ Play'}
                         </button>
                         <button onClick={downloadMusic} className="download-btn">
                             💾 Download MIDI
