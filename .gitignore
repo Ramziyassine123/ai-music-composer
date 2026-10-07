@@ -28,3 +28,7 @@ data/midi_files/
 .env
 # Frontend build output
 frontend/build/
+
+# Generated training data and the data-prep environment
+**/data/keys.json
+abcvenv/
