@@ -1,3 +1,15 @@
+"""Web API that turns a trained model into MIDI melodies.
+
+Flow of POST /generate:
+  1. Pick the key, mode (major/minor/...) and style from the request.
+  2. The model always writes in C (every training piece was shifted to C, see
+     midi_utils.py); it is told the tonality and style at every step.
+  3. Notes outside the chosen scale are banned while sampling.
+  4. The finished token sequence is transposed to the requested key and
+     returned as a MIDI file.
+
+The model is loaded once at startup, so restart the server after retraining.
+"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -5,13 +17,20 @@ import torch
 import pickle
 import io
 import os
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 from model import MusicLSTM
+from midi_utils import MidiProcessor, tonality_of, STYLES
+
+# Pitch the melody starts on (before transposing to the key): folk tunes sit
+# around middle C, the top line of piano music an octave higher
+SEED_PITCH = {'folk': 60, 'classical': 72}
 
 app = FastAPI(title="AI Music Composer API")
 
-# Enable CORS
+# Allow any origin so the React dev server (port 3000) can call this API
+# directly if it is not going through its proxy. Fine for local development;
+# restrict allow_origins before exposing this publicly.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,18 +45,35 @@ processor = None
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class GenerationRequest(BaseModel):
+    # The limits stop a request from asking for an absurdly long (slow) melody
+    # or a temperature that breaks the softmax
     length: int = Field(32, ge=1, le=1024)  # time steps of 0.125s
     temperature: float = Field(1.0, gt=0, le=5.0)
-    key: str = "C"  # For future use
+    key: str = "C"  # root note, e.g. "C", "F#", "Bb"; the melody starts on it
+    style: Literal["folk", "classical"] = "folk"
+    # "major" conditions the model on major pieces; every other mode on minor ones
+    # (there are only two tonalities in training). The mode also picks the scale
+    # that stay_in_key enforces.
+    mode: Literal["major", "minor", "harmonic_minor", "melodic_minor", "chromatic"] = "major"
+    stay_in_key: bool = True  # only allow notes from the mode's scale
 
 @app.on_event("startup")
 async def load_model():
     global model, processor
 
     try:
-        # Load processor
+        # The processor holds the tokenizer settings used in training; loading
+        # the same one guarantees tokens mean the same thing here
         with open('saved_models/processor.pkl', 'rb') as f:
             processor = pickle.load(f)
+
+        # A model trained with an older token format would load but produce
+        # garbage (or fail on shape mismatches), so refuse it with a clear message
+        if getattr(processor, 'token_format_version', 1) != MidiProcessor.TOKEN_FORMAT_VERSION:
+            print("Saved model uses an old token format! Please retrain: python train.py")
+            model = None
+            processor = None
+            return
 
         # Load model
         model = MusicLSTM(vocab_size=processor.vocab_size)
@@ -50,6 +86,10 @@ async def load_model():
 
     except FileNotFoundError:
         print("Model not found! Please train the model first.")
+        model = None
+        processor = None
+    except Exception as e:
+        print(f"Failed to load model ({e}). Please retrain: python train.py")
         model = None
         processor = None
 
@@ -71,21 +111,39 @@ async def generate_music(request: GenerationRequest):
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     try:
-        # Create a simple starting sequence
-        c4_token = 60 - processor.min_pitch + processor.SPECIAL_TOKENS
-        start_sequence = [processor.START_TOKEN, c4_token]  # Start with C4
+        root = processor.key_root(request.key)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
-        # Generate sequence; START/END are banned so the melody runs the full length
+    try:
+        # The model writes in C and the result is transposed to the key, so
+        # the melody starts on the tonic (C4 shifted by at most a tritone)
+        transpose = processor.shift_for_root(root)
+        start_sequence = [processor.START_TOKEN,
+                          processor.pitch_to_token(SEED_PITCH[request.style])]
+
+        # Sampling is steered by banning tokens (their probability becomes 0):
+        # START/END so the melody runs the full length, notes that would leave
+        # the piano range once transposed, and (if stay_in_key) every note
+        # outside the scale. The scale is built in C because the model writes
+        # in C; transposing afterwards moves it to the requested key.
+        banned = [processor.START_TOKEN, processor.END_TOKEN]
+        banned += processor.out_of_range_tokens(transpose)
+        if request.stay_in_key:
+            banned += processor.out_of_key_tokens('C', request.mode)
+
         generated_tokens = model.generate(
             start_sequence=start_sequence,
             length=request.length,
             temperature=request.temperature,
             device=device,
-            banned_tokens=[processor.START_TOKEN, processor.END_TOKEN]
+            banned_tokens=banned,
+            mode=tonality_of(request.mode),
+            style=STYLES.index(request.style)
         )
 
         # Convert to MIDI
-        midi = processor.tokens_to_midi(generated_tokens)
+        midi = processor.tokens_to_midi(generated_tokens, transpose=transpose)
 
         # Convert MIDI to bytes
         midi_bytes = io.BytesIO()
@@ -112,6 +170,7 @@ async def get_vocab_info():
         "special_tokens": {
             "REST": processor.REST_TOKEN,
             "START": processor.START_TOKEN,
-            "END": processor.END_TOKEN
+            "END": processor.END_TOKEN,
+            "HOLD": processor.HOLD_TOKEN
         }
     }
